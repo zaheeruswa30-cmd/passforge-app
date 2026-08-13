@@ -5,7 +5,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
-const app = express();
+export const app = express();
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -38,7 +38,7 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: Record<string, any> | undefined;
 
   const originalResJson = res.json;
 
@@ -64,11 +64,20 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
+/*
+ * Initialize routes and frontend.
+ * Vercel will use the exported Express app.
+ */
+export const ready = (async () => {
   await registerRoutes(httpServer, app);
 
   app.use(
-    (err: any, _req: Request, res: Response, next: NextFunction) => {
+    (
+      err: any,
+      _req: Request,
+      res: Response,
+      next: NextFunction,
+    ) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
@@ -82,26 +91,24 @@ app.use((req, res, next) => {
     },
   );
 
-  // Setup Vite in development mode
-  // Serve static files in production mode
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
-
-  // Server port
-  // Default port is 5000
-  const port = parseInt(process.env.PORT || "5000", 10);
-
-  // Windows-compatible server configuration
-  // Removed reusePort because it causes ENOTSUP on Windows
-  httpServer.listen(
-    port,
-    "127.0.0.1",
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
 })();
+
+/*
+ * Local development server.
+ * Do NOT start a listening server on Vercel.
+ */
+if (!process.env.VERCEL) {
+  ready.then(() => {
+    const port = parseInt(process.env.PORT || "5000", 10);
+
+    httpServer.listen(port, "127.0.0.1", () => {
+      log(`serving on port ${port}`);
+    });
+  });
+}
